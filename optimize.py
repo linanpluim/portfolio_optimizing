@@ -1,7 +1,6 @@
 import numpy as np
 from scipy.optimize import minimize
 import pandas as pd
-import numpy as np
 import yfinance as yf
 
 def geometric_mean_portfolio(x: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> float:
@@ -23,11 +22,15 @@ def geometric_mean_portfolio(x: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> 
 
 
 def maximize_geometric_mean(
-    mu: np.ndarray, cov: np.ndarray, periods_per_year: int = 1, maxiter: int = 1000
+    returns: np.ndarray,
+    periods_per_year: int = 1,
+    risk_free: float = 0.0,
+    maxiter: int = 1000,
 ):
     """Maximize the approximate geometric mean."""
-    mu = np.asarray(mu, dtype=float)
-    cov = np.asarray(cov, dtype=float)
+    returns = np.asarray(returns, dtype=float)
+    mu = returns.mean(axis=0)
+    cov = np.cov(returns, rowvar=False)
     n = mu.size
 
     if cov.shape != (n, n):
@@ -46,14 +49,21 @@ def maximize_geometric_mean(
         raise RuntimeError(f"Optimization failed: {result.message}")
 
     weights = result.x
+    portfolio_gm = geometric_mean_portfolio(weights, mu, cov)
+    portfolio_mu = float(weights @ mu)
+    portfolio_variance = float(weights @ cov @ weights)
+    historical_sharpe = sharpe_ratio(weights, mu, cov, risk_free)
+
     return {
         "weights": weights,
-        "optimal_gm": geometric_mean_portfolio(weights, mu, cov),
-        "annual_gm": (1 + geometric_mean_portfolio(weights, mu, cov)) ** periods_per_year - 1,
-        "mu_p": float(weights @ mu),
-        "annual_mu_p": float(weights @ mu) * periods_per_year,
-        "variance_p": float(weights @ cov @ weights),
-        "annual_variance_p": float(weights @ cov @ weights) * periods_per_year,
+        "optimal_gm": portfolio_gm,
+        "annual_gm": (1 + portfolio_gm) ** periods_per_year - 1,
+        "mu_p": portfolio_mu,
+        "annual_mu_p": portfolio_mu * periods_per_year,
+        "variance_p": portfolio_variance,
+        "annual_variance_p": portfolio_variance * periods_per_year,
+        "historical_sharpe": historical_sharpe,
+        "annual_historical_sharpe": historical_sharpe * np.sqrt(periods_per_year),
         "result": result,
     }
 
@@ -72,7 +82,10 @@ def sample_geometric_mean(x: np.ndarray, returns: np.ndarray) -> float:
 
 
 def maximize_sample_geometric_mean(
-    returns: np.ndarray, periods_per_year: int = 1, maxiter: int = 1000
+    returns: np.ndarray,
+    periods_per_year: int = 1,
+    risk_free: float = 0.0,
+    maxiter: int = 1000,
 ):
     """Maximize the exact sample geometric mean."""
     returns = np.asarray(returns, dtype=float)
@@ -92,14 +105,22 @@ def maximize_sample_geometric_mean(
 
     weights = result.x
     portfolio_returns = returns @ weights
+    portfolio_gm = sample_geometric_mean(weights, returns)
+    portfolio_mu = float(np.mean(portfolio_returns))
+    portfolio_variance = float(np.var(portfolio_returns, ddof=1))
+    historical_sharpe = sharpe_ratio(
+        weights, returns.mean(axis=0), np.cov(returns, rowvar=False), risk_free
+    )
     return {
         "weights": weights,
-        "optimal_gm": sample_geometric_mean(weights, returns),
-        "annual_gm": (1 + sample_geometric_mean(weights, returns)) ** periods_per_year - 1,
-        "mu_p": float(np.mean(portfolio_returns)),
-        "annual_mu_p": float(np.mean(portfolio_returns)) * periods_per_year,
-        "variance_p": float(np.var(portfolio_returns, ddof=1)),
-        "annual_variance_p": float(np.var(portfolio_returns, ddof=1)) * periods_per_year,
+        "optimal_gm": portfolio_gm,
+        "annual_gm": (1 + portfolio_gm) ** periods_per_year - 1,
+        "mu_p": portfolio_mu,
+        "annual_mu_p": portfolio_mu * periods_per_year,
+        "variance_p": portfolio_variance,
+        "annual_variance_p": portfolio_variance * periods_per_year,
+        "historical_sharpe": historical_sharpe,
+        "annual_historical_sharpe": historical_sharpe * np.sqrt(periods_per_year),
         "result": result,
     }
 
@@ -114,20 +135,17 @@ def sharpe_ratio(x: np.ndarray, mu: np.ndarray, cov: np.ndarray, risk_free: floa
 
 
 def maximize_sharpe_ratio(
-    mu: np.ndarray,
-    cov: np.ndarray,
-    risk_free: float = 0.0,
+    returns: np.ndarray,
     periods_per_year: int = 1,
+    risk_free: float = 0.0,
     maxiter: int = 1000,
 ):
     """Maximize the Sharpe ratio."""
-    mu = np.asarray(mu, dtype=float)
-    cov = np.asarray(cov, dtype=float)
+    returns = np.asarray(returns, dtype=float)
+    mu = returns.mean(axis=0)
+    cov = np.cov(returns, rowvar=False)
+
     n = mu.size
-
-    if cov.shape != (n, n):
-        raise ValueError(f"covariance matrix must have shape ({n}, {n}), got {cov.shape}")
-
     result = minimize(
         lambda x: -sharpe_ratio(x, mu, cov, risk_free),
         np.full(n, 1.0 / n),
@@ -141,14 +159,19 @@ def maximize_sharpe_ratio(
         raise RuntimeError(f"Optimization failed: {result.message}")
 
     weights = result.x
+    portfolio_sharpe = sharpe_ratio(weights, mu, cov, risk_free)
+    historical_gm = sample_geometric_mean(weights, returns)
+
     return {
         "weights": weights,
-        "optimal_sharpe": sharpe_ratio(weights, mu, cov, risk_free),
-        "annual_sharpe": sharpe_ratio(weights, mu, cov, risk_free) * np.sqrt(periods_per_year),
+        "optimal_sharpe": portfolio_sharpe,
+        "annual_sharpe": portfolio_sharpe * np.sqrt(periods_per_year),
         "mu_p": float(weights @ mu),
         "annual_mu_p": float(weights @ mu) * periods_per_year,
         "variance_p": float(weights @ cov @ weights),
         "annual_variance_p": float(weights @ cov @ weights) * periods_per_year,
+        "historical_gm": historical_gm,
+        "annual_historical_gm": (1 + historical_gm) ** periods_per_year - 1,
         "risk_free": float(risk_free),
         "result": result,
     }
