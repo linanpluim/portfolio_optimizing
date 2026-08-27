@@ -127,19 +127,25 @@ def annualized_stats(returns, interval):
     return stats, annual_mu, annual_cov
 
 
-def download_returns(tickers, interval, period="max"):
+def download_returns(
+    tickers,
+    interval,
+    period="max",
+    start=None,
+    end=None,
+):
     """Download prices and return returns, mean returns, and covariance."""
-    data = yf.download(
-        tickers,
-        interval=interval,
-        period=period,
-        auto_adjust=True,
-    )
+
+    download_args = {
+        "interval": interval,
+        "start": start if start is not None else "1900-01-01",
+        "end": end,
+        "auto_adjust": True,
+        "period": period,
+    }
+    data = yf.download(tickers, **download_args)
 
     timeseries = data["Close"]
-    returns = timeseries.pct_change().dropna(how="all")
+    returns = timeseries.pct_change().dropna()
 
-    mu = returns.mean().to_numpy()
-    cov = returns.cov().to_numpy()
-
-    return returns, mu, cov
+    return returns, returns.mean().to_numpy(), returns.cov().to_numpy()
