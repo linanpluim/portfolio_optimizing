@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize import minimize
+import pandas as pd
 
 def geometric_mean_portfolio(x: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> float:
     """Evaluate the approximate geometric-mean objective for a portfolio."""
@@ -91,3 +92,34 @@ def maximize_sharpe_ratio(
         "risk_free": float(risk_free),
         "result": result,
     }
+
+def annualized_stats(returns, interval):
+    """Calculate annualized statistics from periodic asset returns."""
+
+    periods_per_year = {
+        "1d": 252,
+        "1wk": 52,
+        "1mo": 12,
+    }[interval]
+
+    returns = returns.dropna(how="all")
+
+    annual_mu = returns.mean() * periods_per_year
+    annual_cov = returns.cov() * periods_per_year
+    annual_vol = returns.std() * np.sqrt(periods_per_year)
+
+    historical_return = (
+        (1 + returns).prod()
+        ** (periods_per_year / returns.notna().sum())
+        - 1
+    )
+
+    stats = pd.DataFrame(
+        {
+            "historical_return": historical_return,
+            "arithmetic_return": annual_mu,
+            "volatility": annual_vol,
+        }
+    )
+
+    return stats, annual_mu, annual_cov
