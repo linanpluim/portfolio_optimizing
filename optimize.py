@@ -22,8 +22,10 @@ def geometric_mean_portfolio(x: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> 
     return float(objective_value) if np.isfinite(objective_value) else -1e12
 
 
-def maximize_geometric_mean(mu: np.ndarray, cov: np.ndarray, maxiter: int = 1000):
-    """Maximize the approximate geometric mean with long-only weights."""
+def maximize_geometric_mean(
+    mu: np.ndarray, cov: np.ndarray, periods_per_year: int = 1, maxiter: int = 1000
+):
+    """Maximize the approximate geometric mean."""
     mu = np.asarray(mu, dtype=float)
     cov = np.asarray(cov, dtype=float)
     n = mu.size
@@ -47,8 +49,57 @@ def maximize_geometric_mean(mu: np.ndarray, cov: np.ndarray, maxiter: int = 1000
     return {
         "weights": weights,
         "optimal_gm": geometric_mean_portfolio(weights, mu, cov),
+        "annual_gm": (1 + geometric_mean_portfolio(weights, mu, cov)) ** periods_per_year - 1,
         "mu_p": float(weights @ mu),
+        "annual_mu_p": float(weights @ mu) * periods_per_year,
         "variance_p": float(weights @ cov @ weights),
+        "annual_variance_p": float(weights @ cov @ weights) * periods_per_year,
+        "result": result,
+    }
+
+
+def sample_geometric_mean(x: np.ndarray, returns: np.ndarray) -> float:
+    """Evaluate the exact geometric mean of realized portfolio returns."""
+    x = np.asarray(x, dtype=float)
+    returns = np.asarray(returns, dtype=float)
+
+    growth = 1.0 + returns @ x
+    if np.any(growth <= 0.0):
+        return -1e12
+
+    objective_value = np.prod(growth) ** (1.0 / returns.shape[0]) - 1.0
+    return float(objective_value)
+
+
+def maximize_sample_geometric_mean(
+    returns: np.ndarray, periods_per_year: int = 1, maxiter: int = 1000
+):
+    """Maximize the exact sample geometric mean."""
+    returns = np.asarray(returns, dtype=float)
+    observations, assets = returns.shape
+
+    result = minimize(
+        lambda x: -sample_geometric_mean(x, returns),
+        np.full(assets, 1.0 / assets),
+        method="SLSQP",
+        bounds=[(0.0, 1.0)] * assets,
+        constraints={"type": "eq", "fun": lambda x: np.sum(x) - 1.0},
+        options={"maxiter": maxiter, "ftol": 1e-12, "disp": False},
+    )
+
+    if not result.success:
+        raise RuntimeError(f"Optimization failed: {result.message}")
+
+    weights = result.x
+    portfolio_returns = returns @ weights
+    return {
+        "weights": weights,
+        "optimal_gm": sample_geometric_mean(weights, returns),
+        "annual_gm": (1 + sample_geometric_mean(weights, returns)) ** periods_per_year - 1,
+        "mu_p": float(np.mean(portfolio_returns)),
+        "annual_mu_p": float(np.mean(portfolio_returns)) * periods_per_year,
+        "variance_p": float(np.var(portfolio_returns, ddof=1)),
+        "annual_variance_p": float(np.var(portfolio_returns, ddof=1)) * periods_per_year,
         "result": result,
     }
 
@@ -63,9 +114,13 @@ def sharpe_ratio(x: np.ndarray, mu: np.ndarray, cov: np.ndarray, risk_free: floa
 
 
 def maximize_sharpe_ratio(
-    mu: np.ndarray, cov: np.ndarray, risk_free: float = 0.0, maxiter: int = 1000
+    mu: np.ndarray,
+    cov: np.ndarray,
+    risk_free: float = 0.0,
+    periods_per_year: int = 1,
+    maxiter: int = 1000,
 ):
-    """Maximize the Sharpe ratio with long-only weights."""
+    """Maximize the Sharpe ratio."""
     mu = np.asarray(mu, dtype=float)
     cov = np.asarray(cov, dtype=float)
     n = mu.size
@@ -89,8 +144,11 @@ def maximize_sharpe_ratio(
     return {
         "weights": weights,
         "optimal_sharpe": sharpe_ratio(weights, mu, cov, risk_free),
+        "annual_sharpe": sharpe_ratio(weights, mu, cov, risk_free) * np.sqrt(periods_per_year),
         "mu_p": float(weights @ mu),
+        "annual_mu_p": float(weights @ mu) * periods_per_year,
         "variance_p": float(weights @ cov @ weights),
+        "annual_variance_p": float(weights @ cov @ weights) * periods_per_year,
         "risk_free": float(risk_free),
         "result": result,
     }
@@ -118,7 +176,7 @@ def annualized_stats(returns, interval):
 
     stats = pd.DataFrame(
         {
-            "historical_return": historical_return,
+            "geometric_return": historical_return,
             "arithmetic_return": annual_mu,
             "volatility": annual_vol,
         }
