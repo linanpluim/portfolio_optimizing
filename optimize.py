@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.optimize import minimize
 import pandas as pd
+import numpy as np
+import yfinance as yf
 
 def geometric_mean_portfolio(x: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> float:
     """Evaluate the approximate geometric-mean objective for a portfolio."""
@@ -123,3 +125,21 @@ def annualized_stats(returns, interval):
     )
 
     return stats, annual_mu, annual_cov
+
+
+def download_returns(tickers, interval, period="max"):
+    """Download prices and return returns, mean returns, and covariance."""
+    data = yf.download(
+        tickers,
+        interval=interval,
+        period=period,
+        auto_adjust=True,
+    )
+
+    timeseries = data["Close"]
+    returns = timeseries.pct_change().dropna(how="all")
+
+    mu = returns.mean().to_numpy()
+    cov = returns.cov().to_numpy()
+
+    return returns, mu, cov
